@@ -315,7 +315,7 @@ resource "ibm_is_volume" "ocp-glusterfs-block-vol" {
   }
 
   count    = "${lookup(var.glusterfs, "nodes", 3) * lookup(var.glusterfs, "num_gluster_disks", 1)}"
-  name     = "${format("%s-glusterfs%02d-block%02d-%s", var.deployment, floor(count.index / lookup(var.glusterfs, "num_gluster_disks", 3)) + 1, floor(count.index / lookup(var.glusterfs, "num_gluster_disks", 1)) + 1, random_id.clusterid.hex)}"
+  name     = "${format("%s-glusterfs%02d-block%02d-%s", var.deployment, floor(count.index / lookup(var.glusterfs, "nodes", 3)) + 1, count.index % lookup(var.glusterfs, "num_gluster_disks", 1) + 1, random_id.clusterid.hex)}"
   profile  = "${lookup(var.glusterfs, "disk_profile", "general-purpose")}"
   iops     = "${lookup(var.glusterfs, "disk_iops", 0)}"
   zone     = "${element(data.ibm_is_zone.ocp_zone.*.name, 
@@ -353,7 +353,7 @@ resource "ibm_is_instance" "ocp-glusterfs" {
     list(element(ibm_is_volume.ocp-glusterfs-docker-vol.*.id, count.index)),
     slice(ibm_is_volume.ocp-glusterfs-block-vol.*.id, 
           count.index * lookup(var.glusterfs, "num_gluster_disks", 1), 
-          (count.index + 1 * lookup(var.glusterfs, "num_gluster_disks", 1)))
+          (count.index + 1) * lookup(var.glusterfs, "num_gluster_disks", 1))
     )}"
   ]
 
