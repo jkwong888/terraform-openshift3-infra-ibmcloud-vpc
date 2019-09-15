@@ -49,6 +49,7 @@ resource "ibm_is_instance" "ocp-control" {
 
   user_data = <<EOF
 #cloud-config
+package_upgrade: true
 users:
 - default
 - name: ${var.ssh_user}
@@ -123,6 +124,7 @@ resource "ibm_is_instance" "ocp-master" {
 
   user_data = <<EOF
 #cloud-config
+package_upgrade: true
 manage_etc_hosts: false
 manage_resolv_conf: false
 users:
@@ -194,6 +196,7 @@ resource "ibm_is_instance" "ocp-infra" {
 
   user_data = <<EOF
 #cloud-config
+package_upgrade: true
 users:
 - default
 - name: ${var.ssh_user}
@@ -264,6 +267,7 @@ resource "ibm_is_instance" "ocp-worker" {
 
   user_data = <<EOF
 #cloud-config
+package_upgrade: true
 users:
 - default
 - name: ${var.ssh_user}
@@ -363,6 +367,7 @@ resource "ibm_is_instance" "ocp-glusterfs" {
 
   user_data = <<EOF
 #cloud-config
+package_upgrade: true
 users:
 - default
 - name: ${var.ssh_user}
