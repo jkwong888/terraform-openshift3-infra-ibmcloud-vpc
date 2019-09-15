@@ -75,7 +75,7 @@ write_files:
 manage_etc_hosts: false
 manage_resolv_conf: false
 runcmd:
-- chown -R ${var.ssh_user}:${var.ssh_user} /home/${var.ssh_user}/.ssh
+- chown -R ${var.ssh_user}:${var.ssh_user} /home/${var.ssh_user}
 EOF
 }
 
@@ -305,6 +305,8 @@ resource "ibm_is_volume" "ocp-glusterfs-docker-vol" {
   capacity = "${lookup(var.glusterfs, "docker_vol_size", 100)}"
 }
 
+# disk list is ordered by node and block device, e.g.
+# [node1block1,node1block2,node2block1,node2block2,node3block1,node3block2]
 resource "ibm_is_volume" "ocp-glusterfs-block-vol" {
   lifecycle {
     ignore_changes = [
@@ -313,10 +315,11 @@ resource "ibm_is_volume" "ocp-glusterfs-block-vol" {
   }
 
   count    = "${lookup(var.glusterfs, "nodes", 3) * lookup(var.glusterfs, "num_gluster_disks", 1)}"
-  name     = "${format("%s-glusterfs%02d-block-%s", var.deployment, count.index + 1, random_id.clusterid.hex)}"
+  name     = "${format("%s-glusterfs%02d-block%02d-%s", var.deployment, floor(count.index / lookup(var.glusterfs, "num_gluster_disks", 3)) + 1, floor(count.index / lookup(var.glusterfs, "num_gluster_disks", 1)) + 1, random_id.clusterid.hex)}"
   profile  = "${lookup(var.glusterfs, "disk_profile", "general-purpose")}"
   iops     = "${lookup(var.glusterfs, "disk_iops", 0)}"
-  zone     = "${element(data.ibm_is_zone.ocp_zone.*.name, count.index)}"
+  zone     = "${element(data.ibm_is_zone.ocp_zone.*.name, 
+                        floor(count.index / lookup(var.glusterfs, "num_gluster_disks", 1)))}"
   capacity = "${lookup(var.glusterfs, "gluster_disk_size", 500)}"
 }
 
@@ -343,9 +346,15 @@ resource "ibm_is_instance" "ocp-glusterfs" {
   }
 
   image   = "${data.ibm_is_image.osimage.id}"
-  volumes = [
-    "${element(ibm_is_volume.ocp-glusterfs-docker-vol.*.id, count.index)}",
-    "${element(ibm_is_volume.ocp-glusterfs-block-vol.*.id, count.index + (count.index * lookup(var.glusterfs, "num_gluster_disks", 1)))}"
+
+  # disk list is ordered by node and block device, e.g.
+  # [node1block1,node1block2,node2block1,node2block2,node3block1,node3block2]
+  volumes = ["${concat(
+    list(element(ibm_is_volume.ocp-glusterfs-docker-vol.*.id, count.index)),
+    slice(ibm_is_volume.ocp-glusterfs-block-vol.*.id, 
+          count.index * lookup(var.glusterfs, "num_gluster_disks", 1), 
+          (count.index + 1 * lookup(var.glusterfs, "num_gluster_disks", 1)))
+    )}"
   ]
 
   user_data = <<EOF
