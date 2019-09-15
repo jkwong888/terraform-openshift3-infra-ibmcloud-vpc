@@ -5,6 +5,21 @@ variable "key_name" {
   default = []
 }
 
+variable "ssh_user" {
+  description = "ssh username to create for installation"
+  default = "ocpdeploy"
+}
+
+variable "ssh_private_key" {
+  description = "ssh private key to add to control node"
+  default = ""
+}
+
+variable "ssh_public_key" {
+  description = "ssh public key to add to all instances"
+  default = ""
+}
+
 variable "deployment" {
    description = "Identifier prefix added to the host names."
    default = "ocp"
@@ -17,7 +32,7 @@ variable "domain" {
 
 variable "os_image" {
   description = "IBM Cloud OS reference code to determine OS, version, word length"
-  default = "ubuntu-16.04-amd64"
+  default = "red-7.x-amd64"
 }
 
 variable "vpc_region" {
@@ -53,7 +68,7 @@ variable "master" {
 
   default = {
     nodes             = "3"
-    profile           = "cc1-8x16"
+    profile           = "bc1-8x32"
 
     disk_size         = "100" // GB
     docker_vol_size   = "100" // GB
@@ -69,7 +84,7 @@ variable "infra" {
 
   default = {
     nodes       = "3"
-    profile           = "bc1-4x16"
+    profile           = "bc1-8x32"
 
     disk_size         = "100" // GB
     docker_vol_size   = "100" // GB

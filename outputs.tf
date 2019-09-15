@@ -62,3 +62,11 @@ output "storage_hostname" {
   value = "${ibm_is_instance.ocp-glusterfs.*.name}"
 }
 
+output "master_loadbalancer_hostname" {
+  value = "${ibm_is_lb.master.hostname}"
+}
+
+output "app_loadblancer_hostname" {
+  value = "${ibm_is_lb.app.hostname}"
+}
+

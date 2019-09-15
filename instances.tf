@@ -3,23 +3,23 @@ data "ibm_is_image" "osimage" {
 }
 
 data "ibm_is_instance_profile" "ocp-control-profile" {
-  name = "${var.control["profile"]}"
+  name = "${lookup(var.control, "profile", "cc1-2x4")}"
 }
 
 data "ibm_is_instance_profile" "ocp-master-profile" {
-  name = "${var.master["profile"]}"
+  name = "${lookup(var.master, "profile", "bc1-8x32")}"
 }
 
 data "ibm_is_instance_profile" "ocp-infra-profile" {
-  name = "${var.infra["profile"]}"
+  name = "${lookup(var.infra, "profile", "bc1-8x32")}"
 }
 
 data "ibm_is_instance_profile" "ocp-worker-profile" {
-  name = "${var.worker["profile"]}"
+  name = "${lookup(var.worker, "profile", "bc1-4x16")}"
 }
 
 data "ibm_is_instance_profile" "ocp-glusterfs-profile" {
-  name = "${var.glusterfs["profile"]}"
+  name = "${lookup(var.glusterfs, "profile", "bc1-4x16")}"
 }
 
 resource "ibm_is_floating_ip" "ocp-control-pub" {
@@ -37,7 +37,7 @@ resource "ibm_is_instance" "ocp-control" {
   vpc  = "${ibm_is_vpc.ocp_vpc.id}"
   zone = "${element(data.ibm_is_zone.ocp_zone.*.name, 0)}"
 
-  keys = ["${concat(data.ibm_is_ssh_key.public_key.*.id, list(ibm_is_ssh_key.installkey.id))}"]
+  keys = ["${concat(data.ibm_is_ssh_key.public_key.*.id)}"]
   profile = "${data.ibm_is_instance_profile.ocp-control-profile.name}"
 
   primary_network_interface = {
@@ -51,28 +51,31 @@ resource "ibm_is_instance" "ocp-control" {
 #cloud-config
 users:
 - default
-- name: ocpdeploy
+- name: ${var.ssh_user}
   groups: [ wheel ]
   sudo: [ "ALL=(ALL) NOPASSWD:ALL" ]
   shell: /bin/bash
-  ssh_import_id: ocpdeploy
+  ssh_import_id: ${var.ssh_user}
   ssh_authorized_keys:
-  - ${tls_private_key.installkey.public_key_openssh}
+  - ${var.ssh_public_key}
+preserve_hostname: false
+fqdn: ${format("%s-control-%s.%s", var.deployment, random_id.clusterid.hex, var.domain)}
+hostname: ${format("%s-control-%s", var.deployment, random_id.clusterid.hex)}
 write_files:
-- path: /home/ocpdeploy/.ssh/id_rsa
+- path: /home/${var.ssh_user}/.ssh/id_rsa
   permissions: '0600'
-  content: ${base64encode(tls_private_key.installkey.private_key_pem)}
+  content: ${base64encode(var.ssh_private_key)}
   encoding: b64
-  owner: ocpdeploy:ocpdeploy
-- path: /home/ocpdeploy/.ssh/id_rsa.pub
+  owner: ${var.ssh_user}:${var.ssh_user}
+- path: /home/${var.ssh_user}/.ssh/id_rsa.pub
   permissions: '0644'
-  content: ${base64encode(tls_private_key.installkey.public_key_openssh)}
+  content: ${base64encode(var.ssh_public_key)}
   encoding: b64
-  owner: ocpdeploy:ocpdeploy
+  owner: ${var.ssh_user}:${var.ssh_user}
 manage_etc_hosts: false
 manage_resolv_conf: false
 runcmd:
-- chown -R ocpdeploy:ocpdeploy /home/ocpdeploy/.ssh
+- chown -R ${var.ssh_user}:${var.ssh_user} /home/${var.ssh_user}/.ssh
 EOF
 }
 
@@ -83,16 +86,16 @@ resource "ibm_is_volume" "ocp-master-docker-vol" {
     ]
   }
 
-  count    = "${var.master["nodes"]}"
+  count    = "${lookup(var.master, "nodes", 3)}"
   name     = "${format("%s-master%02d-docker-%s", var.deployment, count.index + 1, random_id.clusterid.hex)}"
-  profile  = "${var.master["disk_profile"]}"
-  iops     = "${var.master["disk_iops"]}"
+  profile  = "${lookup(var.master, "disk_profile", "general-purpose")}"
+  iops     = "${lookup(var.master, "disk_iops", 0)}"
   zone     = "${element(data.ibm_is_zone.ocp_zone.*.name, count.index)}"
-  capacity = "${var.master["docker_vol_size"]}"
+  capacity = "${lookup(var.master, "docker_vol_size", 100)}"
 }
 
 resource "ibm_is_instance" "ocp-master" {
-  count = "${var.master["nodes"]}"
+  count = "${lookup(var.master, "nodes", 3)}"
   name  = "${format("%s-master%02d-%s", var.deployment, count.index + 1, random_id.clusterid.hex)}"
 
   depends_on = [
@@ -105,7 +108,7 @@ resource "ibm_is_instance" "ocp-master" {
   vpc  = "${ibm_is_vpc.ocp_vpc.id}"
   zone = "${element(data.ibm_is_zone.ocp_zone.*.name, count.index)}"
 
-  keys = ["${concat(data.ibm_is_ssh_key.public_key.*.id, list(ibm_is_ssh_key.installkey.id))}"]
+  keys = ["${concat(data.ibm_is_ssh_key.public_key.*.id)}"]
   profile = "${data.ibm_is_instance_profile.ocp-master-profile.name}"
 
   primary_network_interface = {
@@ -124,13 +127,16 @@ manage_etc_hosts: false
 manage_resolv_conf: false
 users:
 - default
-- name: ocpdeploy
+- name: ${var.ssh_user}
   groups: [ wheel ]
   sudo: [ "ALL=(ALL) NOPASSWD:ALL" ]
   shell: /bin/bash
-  ssh_import_id: ocpdeploy
+  ssh_import_id: ${var.ssh_user}
   ssh_authorized_keys:
-  - ${tls_private_key.installkey.public_key_openssh}
+  - ${var.ssh_public_key}
+preserve_hostname: false
+fqdn: ${format("%s-master%02d-%s.%s", var.deployment, count.index + 1, random_id.clusterid.hex, var.domain)}
+hostname: ${format("%s-master%02d-%s", var.deployment, count.index + 1, random_id.clusterid.hex)}
 write_files:
 - path: /etc/sysconfig/docker-storage-setup
   permissions: '0600'
@@ -151,16 +157,16 @@ resource "ibm_is_volume" "ocp-infra-docker-vol" {
     ]
   }
 
-  count    = "${var.infra["nodes"]}"
+  count    = "${lookup(var.infra, "nodes", 3)}"
   name     = "${format("%s-infra%02d-docker-%s", var.deployment, count.index + 1, random_id.clusterid.hex)}"
-  profile  = "${var.infra["disk_profile"]}"
-  iops     = "${var.infra["disk_iops"]}"
+  profile  = "${lookup(var.infra, "disk_profile", "general-purpose")}"
+  iops     = "${lookup(var.infra, "disk_iops", 0)}"
   zone     = "${element(data.ibm_is_zone.ocp_zone.*.name, count.index)}"
-  capacity = "${var.infra["docker_vol_size"]}"
+  capacity = "${lookup(var.infra, "docker_vol_size", 100)}"
 }
 
 resource "ibm_is_instance" "ocp-infra" {
-  count = "${var.infra["nodes"]}"
+  count = "${lookup(var.infra, "nodes", 3)}"
   depends_on = [
     "ibm_is_security_group_rule.control_ingress_ssh_all",
     "ibm_is_security_group_rule.control_egress_all",
@@ -173,7 +179,7 @@ resource "ibm_is_instance" "ocp-infra" {
   vpc  = "${ibm_is_vpc.ocp_vpc.id}"
   zone = "${element(data.ibm_is_zone.ocp_zone.*.name, count.index)}"
 
-  keys = ["${concat(data.ibm_is_ssh_key.public_key.*.id, list(ibm_is_ssh_key.installkey.id))}"]
+  keys = ["${concat(data.ibm_is_ssh_key.public_key.*.id)}"]
   profile = "${data.ibm_is_instance_profile.ocp-infra-profile.name}"
 
   primary_network_interface = {
@@ -190,13 +196,16 @@ resource "ibm_is_instance" "ocp-infra" {
 #cloud-config
 users:
 - default
-- name: ocpdeploy
+- name: ${var.ssh_user}
   groups: [ wheel ]
   sudo: [ "ALL=(ALL) NOPASSWD:ALL" ]
   shell: /bin/bash
-  ssh_import_id: ocpdeploy
+  ssh_import_id: ${var.ssh_user}
   ssh_authorized_keys:
-  - ${tls_private_key.installkey.public_key_openssh}
+  - ${var.ssh_public_key}
+preserve_hostname: false
+fqdn: ${format("%s-infra%02d-%s.%s", var.deployment, count.index + 1, random_id.clusterid.hex, var.domain)}
+hostname: ${format("%s-infra%02d-%s", var.deployment, count.index + 1, random_id.clusterid.hex)}
 write_files:
 - path: /etc/sysconfig/docker-storage-setup
   permissions: '0600'
@@ -217,16 +226,17 @@ resource "ibm_is_volume" "ocp-worker-docker-vol" {
     ]
   }
 
-  count    = "${var.worker["nodes"]}"
+  count    = "${lookup(var.worker, "nodes", 3)}"
   name     = "${format("%s-worker%02d-docker-%s", var.deployment, count.index + 1, random_id.clusterid.hex)}"
-  profile  = "${var.worker["disk_profile"]}"
-  iops     = "${var.worker["disk_iops"]}"
+  profile  = "${lookup(var.worker, "disk_profile", "general-purpose")}"
+  iops     = "${lookup(var.worker, "disk_iops", 0)}"
   zone     = "${element(data.ibm_is_zone.ocp_zone.*.name, count.index)}"
-  capacity = "${var.worker["docker_vol_size"]}"
+  capacity = "${lookup(var.worker, "docker_vol_size", 100)}"
+
 }
 
 resource "ibm_is_instance" "ocp-worker" {
-  count = "${var.worker["nodes"]}"
+  count    = "${lookup(var.worker, "nodes", 3)}"
   depends_on = [
     "ibm_is_security_group_rule.control_ingress_ssh_all",
     "ibm_is_security_group_rule.control_egress_all",
@@ -239,7 +249,7 @@ resource "ibm_is_instance" "ocp-worker" {
   vpc  = "${ibm_is_vpc.ocp_vpc.id}"
   zone = "${element(data.ibm_is_zone.ocp_zone.*.name, count.index)}"
 
-  keys = ["${concat(data.ibm_is_ssh_key.public_key.*.id, list(ibm_is_ssh_key.installkey.id))}"]
+  keys = ["${concat(data.ibm_is_ssh_key.public_key.*.id)}"]
   profile = "${data.ibm_is_instance_profile.ocp-worker-profile.name}"
 
   primary_network_interface = {
@@ -256,14 +266,17 @@ resource "ibm_is_instance" "ocp-worker" {
 #cloud-config
 users:
 - default
-- name: ocpdeploy
+- name: ${var.ssh_user}
   groups: [ wheel ]
   sudo: [ "ALL=(ALL) NOPASSWD:ALL" ]
-  home: /home/ocpdeploy
+  home: /home/${var.ssh_user}
   shell: /bin/bash
-  ssh_import_id: ocpdeploy
+  ssh_import_id: ${var.ssh_user}
   ssh_authorized_keys:
-  - ${tls_private_key.installkey.public_key_openssh}
+  - ${var.ssh_public_key}
+preserve_hostname: false
+fqdn: ${format("%s-worker%02d-%s.%s", var.deployment, count.index + 1, random_id.clusterid.hex, var.domain)}
+hostname: ${format("%s-worker%02d-%s", var.deployment, count.index + 1, random_id.clusterid.hex)}
 write_files:
 - path: /etc/sysconfig/docker-storage-setup
   permissions: '0600'
@@ -284,12 +297,12 @@ resource "ibm_is_volume" "ocp-glusterfs-docker-vol" {
     ]
   }
 
-  count    = "${var.glusterfs["nodes"]}"
+  count    = "${lookup(var.glusterfs, "nodes", 3)}"
   name     = "${format("%s-glusterfs%02d-docker-%s", var.deployment, count.index + 1, random_id.clusterid.hex)}"
-  profile  = "${var.glusterfs["disk_profile"]}"
-  iops     = "${var.glusterfs["disk_iops"]}"
+  profile  = "${lookup(var.glusterfs, "disk_profile", "general-purpose")}"
+  iops     = "${lookup(var.glusterfs, "disk_iops", 0)}"
   zone     = "${element(data.ibm_is_zone.ocp_zone.*.name, count.index)}"
-  capacity = "${var.glusterfs["docker_vol_size"]}"
+  capacity = "${lookup(var.glusterfs, "docker_vol_size", 100)}"
 }
 
 resource "ibm_is_volume" "ocp-glusterfs-block-vol" {
@@ -299,16 +312,16 @@ resource "ibm_is_volume" "ocp-glusterfs-block-vol" {
     ]
   }
 
-  count    = "${var.glusterfs["nodes"] * var.glusterfs["num_gluster_disks"]}"
+  count    = "${lookup(var.glusterfs, "nodes", 3) * lookup(var.glusterfs, "num_gluster_disks", 1)}"
   name     = "${format("%s-glusterfs%02d-block-%s", var.deployment, count.index + 1, random_id.clusterid.hex)}"
-  profile  = "${var.glusterfs["disk_profile"]}"
-  iops     = "${var.glusterfs["disk_iops"]}"
+  profile  = "${lookup(var.glusterfs, "disk_profile", "general-purpose")}"
+  iops     = "${lookup(var.glusterfs, "disk_iops", 0)}"
   zone     = "${element(data.ibm_is_zone.ocp_zone.*.name, count.index)}"
-  capacity = "${var.glusterfs["gluster_disk_size"]}"
+  capacity = "${lookup(var.glusterfs, "gluster_disk_size", 500)}"
 }
 
 resource "ibm_is_instance" "ocp-glusterfs" {
-  count = "${var.glusterfs["nodes"]}"
+  count = "${lookup(var.glusterfs, "nodes", 3)}"
   depends_on = [
     "ibm_is_security_group_rule.control_ingress_ssh_all",
     "ibm_is_security_group_rule.control_egress_all",
@@ -321,7 +334,7 @@ resource "ibm_is_instance" "ocp-glusterfs" {
   vpc  = "${ibm_is_vpc.ocp_vpc.id}"
   zone = "${element(data.ibm_is_zone.ocp_zone.*.name, count.index)}"
 
-  keys = ["${concat(data.ibm_is_ssh_key.public_key.*.id, list(ibm_is_ssh_key.installkey.id))}"]
+  keys = ["${concat(data.ibm_is_ssh_key.public_key.*.id)}"]
   profile = "${data.ibm_is_instance_profile.ocp-glusterfs-profile.name}"
 
   primary_network_interface = {
@@ -332,20 +345,23 @@ resource "ibm_is_instance" "ocp-glusterfs" {
   image   = "${data.ibm_is_image.osimage.id}"
   volumes = [
     "${element(ibm_is_volume.ocp-glusterfs-docker-vol.*.id, count.index)}",
-    "${element(ibm_is_volume.ocp-glusterfs-block-vol.*.id, count.index + (count.index * var.glusterfs["nodes"]))}"
+    "${element(ibm_is_volume.ocp-glusterfs-block-vol.*.id, count.index + (count.index * lookup(var.glusterfs, "num_gluster_disks", 1)))}"
   ]
 
   user_data = <<EOF
 #cloud-config
 users:
 - default
-- name: ocpdeploy
+- name: ${var.ssh_user}
   groups: [ wheel ]
   sudo: [ "ALL=(ALL) NOPASSWD:ALL" ]
   shell: /bin/bash
-  ssh_import_id: ocpdeploy
+  ssh_import_id: ${var.ssh_user}
   ssh_authorized_keys:
-  - ${tls_private_key.installkey.public_key_openssh}
+  - ${var.ssh_public_key}
+preserve_hostname: false
+fqdn: ${format("%s-glusterfs%02d-%s.%s", var.deployment, count.index + 1, random_id.clusterid.hex, var.domain)}
+hostname: ${format("%s-glusterfs%02d-%s", var.deployment, count.index + 1, random_id.clusterid.hex)}
 write_files:
 - path: /etc/sysconfig/docker-storage-setup
   permissions: '0600'
