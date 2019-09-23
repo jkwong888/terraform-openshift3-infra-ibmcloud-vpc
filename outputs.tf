@@ -66,7 +66,7 @@ output "master_loadbalancer_hostname" {
   value = "${ibm_is_lb.master.hostname}"
 }
 
-output "app_loadblancer_hostname" {
+output "app_loadbalancer_hostname" {
   value = "${ibm_is_lb.app.hostname}"
 }
 
