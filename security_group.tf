@@ -46,16 +46,52 @@ resource "ibm_is_security_group_rule" "master_ingress_ssh_control" {
   }
 }
 
-// TODO i am unsure about allowing all traffic to the master from the cluster, but it doesn't seem 
-// work without it -- particularly in multi-tenant environments i'm uneasy about allowing 
-// access to etcd, so NetworkPolicy should be used in the cluster to limit access to specific
-// ports from specific pods (i.e. calico)
-resource "ibm_is_security_group_rule" "master_ingress_all_cluster" {
+# allow all traffic between master nodes
+resource "ibm_is_security_group_rule" "master_ingress_self" {
   direction = "inbound"
-  remote = "${ibm_is_security_group.cluster_private.id}"
+  remote = "${ibm_is_security_group.master_node.id}"
   group = "${ibm_is_security_group.master_node.id}"
 }
 
+resource "ibm_is_security_group_rule" "master_ingress_sdn_cluster" {
+  direction = "inbound"
+  remote = "${ibm_is_security_group.cluster_private.id}"
+  group = "${ibm_is_security_group.master_node.id}"
+  udp {
+    port_min = 4789
+    port_max = 4789
+  }
+}
+
+resource "ibm_is_security_group_rule" "master_ingress_dns_tcp_cluster" {
+  direction = "inbound"
+  remote = "${ibm_is_security_group.cluster_private.id}"
+  group = "${ibm_is_security_group.master_node.id}"
+  tcp {
+    port_min = 8053
+    port_max = 8053
+  }
+}
+
+resource "ibm_is_security_group_rule" "master_ingress_dns_udp_cluster" {
+  direction = "inbound"
+  remote = "${ibm_is_security_group.cluster_private.id}"
+  group = "${ibm_is_security_group.master_node.id}"
+  udp {
+    port_min = 8053
+    port_max = 8053
+  }
+}
+
+resource "ibm_is_security_group_rule" "master_ingress_api_cluster" {
+  direction = "inbound"
+  remote = "${ibm_is_security_group.cluster_private.id}"
+  group = "${ibm_is_security_group.master_node.id}"
+  tcp {
+    port_min = 443
+    port_max = 443
+  }
+}
 
 resource "ibm_is_security_group_rule" "master_egress_all" {
   direction = "outbound"
